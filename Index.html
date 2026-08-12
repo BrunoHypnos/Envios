@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hypnos · pronóstico</title>
+<link rel="icon" href="favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- SheetJS: para armar y descargar el .xlsx de carga masiva de Cubbo desde el navegador -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+
+/* ── password overlay (mismo patrón que index.html) ─────────────── */
+#pw-overlay {
+  position:fixed; inset:0; background:var(--cap); z-index:9999;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:32px;
+}
+#pw-overlay img { height:36px; opacity:.9; }
+#pw-form { display:flex; flex-direction:column; align-items:center; gap:12px; }
+#pw-input {
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2);
+  color:#fff; padding:10px 20px; border-radius:24px; font-family:inherit;
+  font-size:14px; width:240px; outline:none; text-align:center; letter-spacing:.5px;
+}
+#pw-input::placeholder { color:rgba(255,255,255,.3); }
+#pw-input:focus { border-color:rgba(255,255,255,.5); }
+#pw-btn {
+  background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25);
+  color:#fff; padding:8px 28px; border-radius:24px; font-family:inherit;
+  font-size:12px; cursor:pointer; letter-spacing:.4px;
+}
+#pw-btn:hover { background:rgba(255,255,255,.2); }
+#pw-err { font-size:11px; color:#c4796a; min-height:16px; }
+* { box-sizing:border-box; margin:0; padding:0; }
+:root { --w:#fff; --bl:#EAE6E3; --bd:#B3AAA1; --g:#BDBAB7; --cap:#28211C; }
+body { font-family:'DM Sans',Arial,sans-serif; background:var(--bl); color:var(--cap); font-size:13px; }
+
+.wrap { max-width:1900px; margin:0 auto; padding:0 28px; }
+
+.hdr { background:var(--cap); }
+.hdr .wrap { display:flex; align-items:center; gap:16px; padding-top:13px; padding-bottom:13px; }
+.logo-img { height:28px; display:block; }
+.sub { font-size:10px; color:var(--bd); letter-spacing:.8px; text-transform:uppercase; margin-top:1px; }
+.hdr-r { margin-left:auto; display:flex; align-items:center; gap:10px; font-size:11px; color:var(--bd); }
+.btn { background:none; border:1px solid var(--bd); color:var(--bd); padding:3px 12px;
+       border-radius:20px; font-family:inherit; font-size:11px; cursor:pointer; }
+.btn:hover { border-color:#fff; color:#fff; }
+
+.nav { padding:0; }
+.tabs { display:flex; border-bottom:1px solid var(--g); gap:2px; }
+.tab { padding:7px 16px; font-size:12px; color:var(--bd); cursor:pointer; border:none;
+       border-bottom:2px solid transparent; margin-bottom:-1px; background:none;
+       font-family:inherit; white-space:nowrap; }
+.tab.on { color:var(--cap); border-bottom-color:var(--cap); font-weight:500; }
+.tab:hover:not(.on) { color:var(--cap); }
+
+.cnt { padding-bottom:48px; }
+.panel { display:none; }
+.panel.on { display:block; }
+
+.tb { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.si { background:var(--w); border:1px solid var(--g); border-radius:6px;
+      padding:5px 12px; font-family:inherit; font-size:12px; width:220px; outline:none; }
+.si:focus { border-color:var(--bd); }
+.rc { font-size:11px; color:var(--bd); }
+
+/* sub-navegación (pills) dentro del tab "pronóstico" */
+.pp { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:12px; }
+.pb { background:var(--w); border:1px solid var(--g); color:var(--bd); padding:4px 13px;
+      border-radius:20px; font-size:12px; font-family:inherit; cursor:pointer; }
+.pb.on { background:var(--cap); border-color:var(--cap); color:#fff; font-weight:500; }
+.pb:hover:not(.on) { color:var(--cap); border-color:var(--cap); }
+.subpanel { display:none; }
+.subpanel.on { display:block; }
+
+.tw { overflow:auto; max-height:74vh; border:1px solid var(--g); border-radius:8px; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; font-size:10px; font-weight:500; color:var(--bd); text-transform:uppercase;
+     letter-spacing:.4px; padding:7px 12px; border-bottom:1px solid var(--g); white-space:nowrap;
+     background:var(--bl); position:sticky; z-index:2; }
+th.r { text-align:right; }
+td { padding:6px 12px; border-bottom:1px solid rgba(179,170,161,.25); vertical-align:middle; font-size:13px; }
+
+/* densidad de filas (por defecto: compacta, para que entren más filas en pantalla) */
+body.density-compact td { padding:2px 10px; font-size:11px; }
+body.density-normal td { padding:6px 12px; font-size:13px; }
+body.density-comfortable td { padding:11px 14px; font-size:14px; }
+.btn.on { background:var(--cap); color:#fff; border-color:var(--cap); }
+td.r { text-align:right; font-variant-numeric:tabular-nums; width:64px; min-width:64px; }
+th.r { width:64px; min-width:64px; }
+td.sku { font-family:monospace; font-size:12px; color:#6b5f59; font-weight:500; }
+td.cat { font-size:11px; color:#7a6f69; min-width:90px; }
+tr.dr:hover td { background:rgba(255,255,255,.6); }
+tr.urg td { background:rgba(254,226,226,.35); }
+
+/* encabezado de 2 filas fijo (sticky) */
+.thr1 th { top:0; height:30px; }
+.thr2 th { top:30px; height:28px; }
+
+/* columnas fijas (Producto/SKU) en la vista general, para no perderse al hacer scroll horizontal */
+.stcol1 { position:sticky; left:0; width:230px; min-width:230px; max-width:230px; background:var(--bl); z-index:1; }
+.stcol2 { position:sticky; left:230px; width:95px; min-width:95px; max-width:95px; background:var(--bl); z-index:1; }
+th.stcol1, th.stcol2 { z-index:3; }
+td.stcol1, td.stcol2 { background:var(--w); }
+tr.dr:hover td.stcol1, tr.dr:hover td.stcol2 { background:#f3f1ee; }
+tr.urg td.stcol1, tr.urg td.stcol2 { background:#fdeceb; }
+
+/* líneas divisorias entre grupos de columnas */
+.gd { border-left:2px solid var(--cap); }
+
+/* columnas fijas (SKU/Producto) en las vistas por tienda (envío) */
+.tcol1 { position:sticky; left:0; width:100px; min-width:100px; max-width:100px; background:var(--bl); z-index:1; }
+.tcol2 { position:sticky; left:100px; width:300px; min-width:300px; max-width:300px; background:var(--bl); z-index:1; }
+th.tcol1, th.tcol2 { z-index:3; }
+td.tcol1, td.tcol2 { background:var(--w); white-space:normal; }
+tr.dr:hover td.tcol1, tr.dr:hover td.tcol2 { background:#f3f1ee; }
+
+/* celda editable de envío (contenteditable): verde cuando hay cantidad a enviar */
+td.editable { background:var(--w); cursor:text; min-width:80px; width:90px; border:1px dashed var(--g); }
+td.editable:focus { outline:2px solid #6d28d9; outline-offset:-2px; }
+td.editable.has-envio { background:#dcfce7; color:#15803d; font-weight:600; border-color:#86dba0; }
+
+/* filtro "solo con envío" */
+.chk { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--bd); cursor:pointer; }
+
+/* tabla de envío por tienda: condensada, sin estirarse a todo el ancho */
+.tw-tienda { max-width:900px; }
+table.tbl-tienda { width:auto; }
+table.tbl-tienda th.r, table.tbl-tienda td.r { width:130px; min-width:130px; }
+
+.bx { display:inline-block; font-size:10px; font-weight:500; padding:1px 7px; border-radius:10px; line-height:1.6; }
+.b-out { background:#fee2e2; color:#b91c1c; }
+.b-in  { background:#dcfce7; color:#15803d; }
+.b-sin { background:var(--cap); color:#fff; }
+.b-env { background:#ede9fe; color:#6d28d9; }
+.b-ok  { background:#f1f5f9; color:#64748b; }
+
+.st { padding:40px; text-align:center; color:var(--bd); }
+.sp { display:inline-block; width:13px; height:13px; border:2px solid var(--g);
+      border-top-color:var(--cap); border-radius:50%; animation:spin .7s linear infinite;
+      vertical-align:middle; margin-right:6px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+tr.gh td { background:var(--bl); padding:8px 12px 4px; font-size:10px; font-weight:600;
+            color:var(--bd); text-transform:uppercase; letter-spacing:.6px;
+            border-bottom:1px solid var(--g); position:sticky; left:0; }
+</style>
+</head>
+<body class="density-compact">
+
+<!-- password overlay -->
+<div id="pw-overlay">
+  <img src="logo.png" alt="hypnos">
+  <div id="pw-form">
+    <input id="pw-input" type="password" placeholder="contraseña" autocomplete="off">
+    <button id="pw-btn" onclick="checkPw()">entrar</button>
+    <span id="pw-err"></span>
+  </div>
+</div>
+
+<div class="hdr">
+  <div class="wrap">
+    <img src="logo.png" alt="hypnos" class="logo-img">
+    <span class="sub">operaciones · pronóstico &amp; stock óptimo</span>
+    <div class="hdr-r">
+      <span id="hdr-fecha"></span>
+      <span style="color:var(--bd)">Vista:</span>
+      <button class="btn" data-density="compact" onclick="setDensity('compact')">Compacta</button>
+      <button class="btn" data-density="normal" onclick="setDensity('normal')">Normal</button>
+      <button class="btn" data-density="comfortable" onclick="setDensity('comfortable')">Cómoda</button>
+      <button class="btn" onclick="fetchData()">↺ actualizar</button>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="wrap" style="padding-top:16px;padding-bottom:0">
+  <div class="tabs">
+    <button class="tab on" data-tab="pronostico">pronóstico</button>
+    <button class="tab" data-tab="config">config. envío</button>
+  </div>
+  </div>
+</div>
+
+<div class="cnt">
+<div class="wrap" style="padding-top:16px">
+
+  <div class="panel on" id="panel-pronostico">
+
+    <div class="pp" id="subtabs">
+      <button class="pb on" data-sub="general">Vista general</button>
+      <button class="pb" data-sub="PA">Envío PA</button>
+      <button class="pb" data-sub="Vitacura">Envío Vitacura</button>
+      <button class="pb" data-sub="Meli">Envío Meli</button>
+      <button class="pb" data-sub="Falabella">Envío Falabella</button>
+    </div>
+
+    <!-- ── Vista general ── -->
+    <div class="subpanel on" id="sub-general">
+      <div class="tb">
+        <input class="si" id="q-general" placeholder="buscar SKU o producto…">
+        <button class="btn" id="cubbo-btn" onclick="generarCubbo()" style="margin-left:auto">⬇ Generar pedido Cubbo</button>
+        <span class="rc" id="rc-general"></span>
+      </div>
+      <div class="tw">
+        <div class="st" id="msg-general"><span class="sp"></span>cargando...</div>
+        <table id="tbl-general" style="display:none">
+          <thead>
+          <tr class="thr1">
+            <th class="stcol1" rowspan="2">Producto</th>
+            <th class="stcol2" rowspan="2">SKU</th>
+            <th colspan="6" style="text-align:center" class="gd">Venta Suavizada (Mensual)</th>
+            <th colspan="5" style="text-align:center" class="gd">% Venta</th>
+            <th colspan="6" style="text-align:center" class="gd">Stock</th>
+            <th colspan="4" style="text-align:center" class="gd">Envío sugerido</th>
+          </tr>
+          <tr class="thr2">
+            <th class="r gd">Blue</th><th class="r">PA</th><th class="r">Vitacura</th><th class="r">Meli</th><th class="r">Falabella</th><th class="r">Total</th>
+            <th class="r gd">Blue</th><th class="r">PA</th><th class="r">Vitacura</th><th class="r">Meli</th><th class="r">Falabella</th>
+            <th class="r gd">Blue</th><th class="r">PA</th><th class="r">Vitacura</th><th class="r">Meli</th><th class="r">Falabella</th><th class="r">Total</th>
+            <th class="r gd">PA</th><th class="r">Vitacura</th><th class="r">Meli</th><th class="r">Falabella</th>
+          </tr>
+          </thead>
+          <tbody id="tb-general"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── vistas por tienda (envío) ── -->
+    <div class="subpanel" id="sub-PA"></div>
+    <div class="subpanel" id="sub-Vitacura"></div>
+    <div class="subpanel" id="sub-Meli"></div>
+    <div class="subpanel" id="sub-Falabella"></div>
+
+  </div>
+
+  <div class="panel" id="panel-config">
+    <div class="tb">
+      <span class="rc">Datos de destino para armar el pedido B2B de Cubbo (Nombre/Dirección/etc. de cada sucursal). Se guardan solo en este navegador — hay que completarlos una vez por computador.</span>
+    </div>
+    <div id="cfg-forms"></div>
+    <div class="tb" style="margin-top:6px">
+      <button class="btn" onclick="saveCubboConfig()">Guardar configuración</button>
+      <span class="rc" id="cfg-saved"></span>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+// ── auth (mismo patrón simple que index.html) ──────────────────
+// TODO: cambia esta clave antes de subir el archivo al repo.
+const PW = 'HypnosOp2026';
+const ov = document.getElementById('pw-overlay');
+const pi = document.getElementById('pw-input');
+
+function checkPw() {
+  if (pi.value === PW) {
+    sessionStorage.setItem('hx_auth_pron', '1');
+    ov.style.display = 'none';
+  } else {
+    document.getElementById('pw-err').textContent = 'clave incorrecta';
+    pi.value = '';
+    pi.focus();
+    setTimeout(() => document.getElementById('pw-err').textContent = '', 2000);
+  }
+}
+pi.addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+
+if (sessionStorage.getItem('hx_auth_pron') === '1') {
+  ov.style.display = 'none';
+} else {
+  setTimeout(() => pi.focus(), 100);
+}
+
+// ── densidad de la tabla (compacta por defecto, para que entren más filas) ──
+function setDensity(d) {
+  document.body.className = document.body.className.replace(/density-\S+/g, '').trim();
+  document.body.classList.add('density-' + d);
+  try { localStorage.setItem('hx_density', d); } catch(e) {}
+  document.querySelectorAll('[data-density]').forEach(b => b.classList.toggle('on', b.dataset.density === d));
+}
+setDensity((function(){ try { return localStorage.getItem('hx_density') || 'compact'; } catch(e) { return 'compact'; } })());
+
+// ── dashboard ────────────────────────────────────────────────
+const GAS = 'https://script.google.com/macros/s/AKfycbxJyXsHip5H45mmtfTXlRgEV1sthRLPRxkpiTEdY9dVB4xKie8jrGScL1HV8Y-TbGHg/exec';
+
+let D = null;
+// cantidades de envío editadas a mano por el usuario en las vistas por tienda,
+// { PA: {sku: cantidad}, Vitacura: {...}, Meli: {...}, Falabella: {...} }.
+// Si un SKU no aparece acá, se usa el valor sugerido calculado en el Sheet.
+const envioOverrides = { PA:{}, Vitacura:{}, Meli:{}, Falabella:{} };
+
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const $ = id => document.getElementById(id);
+
+function setMsg(id, html) {
+  $('msg-'+id).innerHTML = html; $('msg-'+id).style.display='';
+  const t=$('tbl-'+id); if(t) t.style.display='none';
+}
+function showTbl(id) {
+  $('msg-'+id).style.display='none'; $('tbl-'+id).style.display='';
+}
+function setRc(id, n, tot) {
+  const el = $('rc-'+id); if (el) el.textContent = n===tot ? `${tot}` : `${n} / ${tot}`;
+}
+
+// tabs principales (pronóstico / config. envío)
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  $('panel-'+b.dataset.tab).classList.add('on');
+}));
+
+// sub-tabs dentro de "pronóstico"
+document.querySelectorAll('#subtabs .pb').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#subtabs .pb').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.subpanel').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  $('sub-'+b.dataset.sub).classList.add('on');
+  if (D) {
+    if (b.dataset.sub === 'general') renderGeneral($('q-general')?.value||'');
+    else renderTienda(b.dataset.sub);
+  }
+}));
+
+$('q-general')?.addEventListener('input', e => { if (D) renderGeneral(e.target.value); });
+
+function isUrgente(p){ return p.urgente === true || String(p.urgente).toUpperCase()==='TRUE'; }
+function isQuiebre(v){ return v === true || String(v).toUpperCase()==='TRUE'; }
+const pct = n => { n = Number(n)||0; return Math.round(n*100)+'%'; };
+const num1 = n => Math.round((Number(n)||0)*10)/10;
+
+// ── Vista general ──────────────────────────────────────────────
+function renderGeneral(q) {
+  q = (q||'').toLowerCase().trim();
+  const rows = (D.productos||[]).filter(p =>
+    !q || p.sku.toLowerCase().includes(q) || (p.producto||'').toLowerCase().includes(q) || (p.categoria||'').toLowerCase().includes(q));
+  setRc('general', rows.length, (D.productos||[]).length);
+  if (!rows.length) { setMsg('general', q?'sin resultados':'sin datos'); return; }
+  showTbl('general');
+
+  let lastCat = null;
+  const stockCell = (v, quiebre, gd) => {
+    const isQ = isQuiebre(quiebre);
+    return `<td class="r${gd?' gd':''}"${isQ?' style="color:#b91c1c;font-weight:600"':''}>${Number(v)||0}</td>`;
+  };
+  const envioCell = (v, gd) => {
+    v = Number(v)||0;
+    return `<td class="r${gd?' gd':''}"${v>0?' style="color:#6d28d9;font-weight:600"':' style="color:var(--bd)"'}>${v}</td>`;
+  };
+
+  $('tb-general').innerHTML = rows.map(p => {
+    const catRow = p.categoria !== lastCat
+      ? `<tr class="gh"><td colspan="23" style="padding-left:12px">${esc(lastCat=p.categoria)||'sin categoría'}</td></tr>` : '';
+    return catRow + `<tr class="dr ${isUrgente(p)?'urg':''}">
+      <td class="stcol1">${esc(p.producto)}</td>
+      <td class="sku stcol2">${esc(p.sku)}</td>
+      <td class="r gd">${num1(p.venta_blue)}</td>
+      <td class="r">${num1(p.venta_pa)}</td>
+      <td class="r">${num1(p.venta_vitacura)}</td>
+      <td class="r">${num1(p.venta_meli)}</td>
+      <td class="r">${num1(p.venta_falabella)}</td>
+      <td class="r" style="font-weight:500">${num1(p.demanda_total)}</td>
+      <td class="r gd">${pct(p.venta_pct_blue)}</td>
+      <td class="r">${pct(p.venta_pct_pa)}</td>
+      <td class="r">${pct(p.venta_pct_vitacura)}</td>
+      <td class="r">${pct(p.venta_pct_meli)}</td>
+      <td class="r">${pct(p.venta_pct_falabella)}</td>
+      ${stockCell(p.stock_blue, false, true)}
+      ${stockCell(p.stock_pa, p.quiebre_pa, false)}
+      ${stockCell(p.stock_vitacura, p.quiebre_vitacura, false)}
+      ${stockCell(p.stock_meli, p.quiebre_meli, false)}
+      ${stockCell(p.stock_falabella, p.quiebre_falabella, false)}
+      <td class="r" style="font-weight:500">${Number(p.stock_total)||0}</td>
+      ${envioCell(p.envio_pa, true)}
+      ${envioCell(p.envio_vitacura, false)}
+      ${envioCell(p.envio_meli, false)}
+      ${envioCell(p.envio_falabella, false)}
+    </tr>`;
+  }).join('');
+}
+
+// ── vistas por tienda: SKU, Producto, Stock Blue, Stock tienda, Envío (editable) ──
+const TIENDA_CAMPOS = {
+  PA:        { stock: 'stock_pa',        envio: 'envio_pa' },
+  Vitacura:  { stock: 'stock_vitacura',  envio: 'envio_vitacura' },
+  Meli:      { stock: 'stock_meli',      envio: 'envio_meli' },
+  Falabella: { stock: 'stock_falabella', envio: 'envio_falabella' },
+};
+
+function ensurePanelTienda(tienda) {
+  const panel = $('sub-'+tienda);
+  if (panel.dataset.built === '1') return;
+  panel.dataset.built = '1';
+  panel.innerHTML = `
+    <div class="tb">
+      <input class="si" id="q-${tienda}" placeholder="buscar SKU o producto…">
+      <label class="chk"><input type="checkbox" id="f-envio-${tienda}" onchange="renderTienda('${tienda}')"> Solo con envío</label>
+      <button class="btn" onclick="copiarSkuCantidad('${tienda}')">⧉ Copiar SKU + Cantidad</button>
+      <button class="btn" onclick="restablecerEnvio('${tienda}')">↺ Restablecer sugerido</button>
+      <button class="btn" onclick="generarCubboTienda('${tienda}')" style="margin-left:auto">⬇ Descargar pedido Cubbo</button>
+      <span class="rc" id="rc-${tienda}"></span>
+    </div>
+    <div class="tw tw-tienda">
+      <div class="st" id="msg-${tienda}"><span class="sp"></span>cargando...</div>
+      <table id="tbl-${tienda}" class="tbl-tienda" style="display:none">
+        <thead><tr class="thr1">
+          <th class="tcol1">SKU</th>
+          <th class="tcol2">Producto</th>
+          <th class="r">Stock Blue (bodega)</th>
+          <th class="r">Stock ${esc(tienda)}</th>
+          <th class="r">Envío</th>
+        </tr></thead>
+        <tbody id="tb-${tienda}"></tbody>
+      </table>
+    </div>`;
+  $('q-'+tienda).addEventListener('input', e => renderTienda(tienda, e.target.value));
+}
+
+function envioActual(tienda, p) {
+  const campo = TIENDA_CAMPOS[tienda].envio;
+  const ov = envioOverrides[tienda][p.sku];
+  return ov !== undefined ? ov : (Number(p[campo]) || 0);
+}
+
+function renderTienda(tienda, q) {
+  ensurePanelTienda(tienda);
+  q = (q || $('q-'+tienda)?.value || '').toLowerCase().trim();
+  const soloEnvio = $('f-envio-'+tienda)?.checked;
+  const campos = TIENDA_CAMPOS[tienda];
+  const total = (D.productos||[]).length;
+  const rows = (D.productos||[]).filter(p => {
+    if (q && !(p.sku.toLowerCase().includes(q) || (p.producto||'').toLowerCase().includes(q))) return false;
+    if (soloEnvio && envioActual(tienda, p) <= 0) return false;
+    return true;
+  });
+  setRc(tienda, rows.length, total);
+  if (!rows.length) { setMsg(tienda, (q||soloEnvio)?'sin resultados':'sin datos'); return; }
+  showTbl(tienda);
+
+  let lastCat = null;
+  $('tb-'+tienda).innerHTML = rows.map(p => {
+    const catRow = p.categoria !== lastCat
+      ? `<tr class="gh"><td colspan="5" style="padding-left:12px">${esc(lastCat=p.categoria)||'sin categoría'}</td></tr>` : '';
+    const envio = envioActual(tienda, p);
+    return catRow + `<tr class="dr" data-sku="${esc(p.sku)}">
+      <td class="sku tcol1">${esc(p.sku)}</td>
+      <td class="tcol2">${esc(p.producto)}</td>
+      <td class="r">${Number(p.stock_blue)||0}</td>
+      <td class="r">${Number(p[campos.stock])||0}</td>
+      <td class="r editable${envio>0?' has-envio':''}" contenteditable="true" data-tienda="${esc(tienda)}" data-sku="${esc(p.sku)}"
+          onblur="onEditEnvio(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${envio}</td>
+    </tr>`;
+  }).join('');
+}
+
+function onEditEnvio(td) {
+  const tienda = td.dataset.tienda, sku = td.dataset.sku;
+  const val = Math.max(0, Math.round(Number(td.textContent.replace(',', '.')) || 0));
+  td.textContent = val;
+  envioOverrides[tienda][sku] = val;
+  td.classList.toggle('has-envio', val > 0);
+}
+
+function restablecerEnvio(tienda) {
+  envioOverrides[tienda] = {};
+  renderTienda(tienda);
+}
+
+function copiarSkuCantidad(tienda) {
+  const rows = (D.productos||[]).map(p => [p.sku, envioActual(tienda, p)]).filter(([,c]) => c > 0);
+  if (!rows.length) { alert('No hay cantidades a enviar a ' + tienda + ' por ahora.'); return; }
+  const texto = rows.map(r => r.join('\t')).join('\n');
+  navigator.clipboard.writeText(texto).then(() => {
+    alert('Copiado: ' + rows.length + ' SKU(s) con cantidad a enviar a ' + tienda + '.\nPégalo donde lo necesites (Excel, Sheets, etc.).');
+  }).catch(() => {
+    alert('No se pudo copiar automáticamente. Selecciona la tabla manualmente y usa Ctrl+C.');
+  });
+}
+
+function fetchData() {
+  setMsg('general', '<span class="sp"></span>cargando...');
+  fetch(GAS)
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.ok === false) { setMsg('general', esc(data.error||'error al cargar')); return; }
+      D = data;
+      $('hdr-fecha').textContent = 'última corrida: ' + (data.fecha || '');
+      const activeSub = document.querySelector('#subtabs .pb.on')?.dataset?.sub || 'general';
+      if (activeSub === 'general') renderGeneral($('q-general')?.value||'');
+      else renderTienda(activeSub);
+    })
+    .catch(() => setMsg('general', 'error al cargar datos — revisa la URL del Apps Script'));
+}
+
+// ── configuración de destinos para el pedido Cubbo (persistida en el navegador) ──
+const CUBBO_TIENDAS = ['PA','Vitacura','Meli','Falabella'];
+const CUBBO_FIELDS = [
+  ['nombre','Nombre del Cliente*'], ['apellido','Apellido*'], ['email','Email*'], ['telefono','Teléfono*'],
+  ['direccion','Dirección*'], ['complemento','Complemento'], ['comuna','Comuna*'], ['numero','Número'],
+  ['referencias','Referencias'], ['region','Región*'], ['cp','Código Postal*'], ['envio_config','Configuración de Envío*'],
+];
+
+// código corto por tienda para el "Numero de Orden" (formato "CODIGO DD/MM/AAAA").
+// TODO: confirmar los códigos de Meli y Falabella (por ahora son un supuesto razonable).
+const STORE_CODE = { PA: 'PA', Vitacura: 'AdC', Meli: 'Meli', Falabella: 'Fala' };
+
+// datos reales de destino que Bruno compartió para PA y Vitacura — quedan precargados
+// por defecto (se pueden editar/sobreescribir en la pestaña "config. envío").
+const DEFAULT_CUBBO_CONFIG = {
+  PA: {
+    nombre:'Bruno', apellido:'Camus', email:'bruno@hypnoschile.com', telefono:'+56 9 9178 0562',
+    direccion:'Av. Presidente Kennedy', complemento:'', comuna:'Las Condes', numero:'5413',
+    referencias:'Local 566', region:'Metropolitana', cp:'1', envio_config:'Blue Express - Express - CL',
+  },
+  Vitacura: {
+    nombre:'Bruno', apellido:'Camus', email:'bruno@hypnoschile.com', telefono:'+56 9 9178 0562',
+    direccion:'Av. Alonso de cordova', complemento:'', comuna:'Vitacura', numero:'4212',
+    referencias:'4B', region:'Metropolitana', cp:'', envio_config:'Blue Express - Express - CL',
+  },
+  Meli: {},
+  Falabella: {},
+};
+
+function getCubboConfig() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('hx_cubbo_config') || '{}'); } catch(e) {}
+  const merged = {};
+  CUBBO_TIENDAS.forEach(t => { merged[t] = Object.assign({}, DEFAULT_CUBBO_CONFIG[t] || {}, saved[t] || {}); });
+  return merged;
+}
+
+function fechaDDMMAAAA() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()}`;
+}
+function fechaDDMM() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}${p(d.getMonth()+1)}`;
+}
+
+const CUBBO_HEADERS = ['Numero de Orden*','SKU*','Cantidad*','Nombre del Cliente*','Apellido*','Email*',
+  'Telefono*','Dirección*','Complemento','Comuna*','Numero','Referencias','Región*','Codigo Postal*',
+  'País*','Configuración de Envio*','B2B(true/false)'];
+
+function filaCubbo(numeroOrden, sku, cant, c) {
+  return [
+    numeroOrden, sku, cant,
+    c.nombre||'', c.apellido||'', c.email||'', c.telefono||'',
+    c.direccion||'', c.complemento||'', c.comuna||'', c.numero||'', c.referencias||'',
+    c.region||'', c.cp||'', 'Chile', c.envio_config||'', 'true'
+  ];
+}
+function buildCubboForm() {
+  const cfg = getCubboConfig();
+  $('cfg-forms').innerHTML = CUBBO_TIENDAS.map(t => `
+    <div style="border:1px solid var(--g);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+      <strong style="color:var(--cap)">${esc(t)}</strong>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+        ${CUBBO_FIELDS.map(([k,label]) => `
+          <label style="font-size:11px;color:var(--bd);display:flex;flex-direction:column;gap:2px">
+            ${esc(label)}
+            <input class="si" style="width:170px" id="cfg-${t}-${k}" value="${esc((cfg[t]||{})[k]||'')}">
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+function saveCubboConfig() {
+  const cfg = {};
+  CUBBO_TIENDAS.forEach(t => {
+    cfg[t] = {};
+    CUBBO_FIELDS.forEach(([k]) => { cfg[t][k] = $('cfg-'+t+'-'+k)?.value.trim() || ''; });
+  });
+  localStorage.setItem('hx_cubbo_config', JSON.stringify(cfg));
+  const s = $('cfg-saved'); if (s) { s.textContent = 'guardado ✓'; setTimeout(() => s.textContent='', 2000); }
+}
+
+// ── generador del archivo de Cubbo (mismas 17 columnas y el mismo orden que
+// CUBBO_planilla_carga_masiva_pedidos B2B.xlsx) ──
+// OJO: la columna SKU* en la plantilla de Cubbo espera el ID NUMÉRICO INTERNO
+// de Cubbo (ej. 189851), no nuestro código de SKU (ej. "ESCLPM"). Todavía no
+// tenemos esa tabla de equivalencia SKU-propio → ID-Cubbo, así que por ahora
+// esta función deja nuestro SKU tal cual en esa columna — hay que reemplazarlo
+// por el ID real de Cubbo antes de subir el archivo, o completar el mapeo acá
+// (buscar más abajo "SKU_TO_CUBBO_ID").
+const SKU_TO_CUBBO_ID = {
+  // 'ESCLPM': 189851,
+  // 'CESPM': 189850,
+};
+
+// requisitos "blandos" — solo para avisar si falta algo antes de descargar,
+// no bloquean la descarga. "cp" quedó fuera porque el ejemplo real de Vitacura
+// vino sin código postal.
+const CUBBO_REQUERIDOS = ['nombre','apellido','email','telefono','direccion','comuna','region','envio_config'];
+
+// ── genera y descarga el pedido de UNA sola tienda (botón en cada pestaña) ──
+function generarCubboTienda(tienda) {
+  if (!D || !D.productos) { alert('Todavía no hay datos cargados.'); return; }
+
+  const cfg = getCubboConfig()[tienda] || {};
+  const numeroOrden = `${STORE_CODE[tienda] || tienda} ${fechaDDMMAAAA()}`;
+  const filas = [CUBBO_HEADERS];
+  const skusSinMapeo = new Set();
+
+  D.productos.forEach(p => {
+    const cant = envioActual(tienda, p); // usa el override editado a mano si existe
+    if (cant <= 0) return;
+    const skuCubbo = SKU_TO_CUBBO_ID[p.sku];
+    if (skuCubbo === undefined) skusSinMapeo.add(p.sku);
+    filas.push(filaCubbo(numeroOrden, skuCubbo !== undefined ? skuCubbo : p.sku, cant, cfg));
+  });
+
+  if (filas.length <= 1) { alert('No hay envíos sugeridos para ' + tienda + ' por ahora.'); return; }
+
+  if (skusSinMapeo.size) {
+    const seguir = confirm('Todavía no hay ID de Cubbo mapeado para ' + skusSinMapeo.size + ' SKU(s) '
+      + '(quedarán con nuestro propio código de SKU en vez del ID numérico de Cubbo).\n\n¿Generar igual el archivo?');
+    if (!seguir) return;
+  }
+  if (CUBBO_REQUERIDOS.some(k => !cfg[k])) {
+    const seguir2 = confirm(`Falta completar la configuración de destino de ${tienda} (pestaña "config. envío").\n\n¿Generar igual el archivo (con esos campos vacíos)?`);
+    if (!seguir2) return;
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Hoja1');
+  XLSX.writeFile(wb, `${STORE_CODE[tienda] || tienda} ${fechaDDMM()}.xlsx`);
+}
+
+// ── genera y descarga un solo archivo con las 4 tiendas juntas (botón en Vista general) ──
+function generarCubbo() {
+  if (!D || !D.productos) { alert('Todavía no hay datos cargados.'); return; }
+
+  const cfg = getCubboConfig();
+  const filas = [CUBBO_HEADERS];
+  const faltantes = new Set();
+  const skusSinMapeo = new Set();
+
+  CUBBO_TIENDAS.forEach(tienda => {
+    const c = cfg[tienda] || {};
+    const numeroOrden = `${STORE_CODE[tienda] || tienda} ${fechaDDMMAAAA()}`;
+    let tieneEnvio = false;
+
+    D.productos.forEach(p => {
+      const cant = envioActual(tienda, p); // usa el override editado a mano si existe
+      if (cant <= 0) return;
+      tieneEnvio = true;
+      const skuCubbo = SKU_TO_CUBBO_ID[p.sku];
+      if (skuCubbo === undefined) skusSinMapeo.add(p.sku);
+      filas.push(filaCubbo(numeroOrden, skuCubbo !== undefined ? skuCubbo : p.sku, cant, c));
+    });
+
+    if (tieneEnvio && CUBBO_REQUERIDOS.some(k => !c[k])) faltantes.add(tienda);
+  });
+
+  if (filas.length <= 1) { alert('No hay envíos sugeridos por ahora.'); return; }
+
+  if (skusSinMapeo.size) {
+    const seguir = confirm('Todavía no hay ID de Cubbo mapeado para ' + skusSinMapeo.size + ' SKU(s) '
+      + '(quedarán con nuestro propio código de SKU en vez del ID numérico de Cubbo).\n\n¿Generar igual el archivo?');
+    if (!seguir) return;
+  }
+  if (faltantes.size) {
+    const seguir2 = confirm('Falta completar la configuración de destino (pestaña "config. envío") para: '
+      + [...faltantes].join(', ') + '.\n\n¿Generar igual el archivo (con esos campos vacíos)?');
+    if (!seguir2) return;
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Hoja1');
+  XLSX.writeFile(wb, 'cubbo_pedido_' + fechaDDMMAAAA().replace(/\//g,'-') + '.xlsx');
+}
+
+buildCubboForm();
+fetchData();
+</script>
+</body>
+</html>
